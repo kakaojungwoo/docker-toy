@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    hostname: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ~/prometheus/config/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-lifecycle'
+    networks:
+      - "monitoring"
+    deploy:
+      placement:
+        constraints:
+          - "node.role == manager"    
+    depends_on:
+      - "cadvisor"
+
+  grafana:
+    image: grafana/grafana:latest
+    hostname: grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: 'test123'
+    ports:
+      - "3000:3000"
+    networks:
+      - "monitoring"
+    deploy:
+      placement:
+        constraints:
+          - "node.role == manager"
+    depends_on:
+      - "prometheus" 
+
+  cadvisor:
+    image: google/cadvisor:latest
+    deploy:
+      mode: global
+      placement: 
+        constraints: 
+          - "node.role == worker"
+    ports:
+      - "8080:8080"
+    networks:
+      - "monitoring"  
+    volumes:
+      - "/:/rootfs:ro"
+      - "/var/run:/var/run:rw"
+      - "/sys:/sys:ro"
+      - "/var/lib/docker:/var/lib/docker:ro"
+
+  node-exporter: 
+    image: prom/node-exporter:latest
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - "node.role == worker"
+    ports:
+      - "9100:9100"
+    networks:
+      - "monitoring"
+    volumes:
+      - "/proc:/host/proc:ro"
+      - "/sys:/host/sys:ro"
+      - "/:/rootfs:ro"
+
+  nginx:
+    image: nginx:latest
+    deploy:
+      mode: global
+      placement:
+        constraints: 
+          - "node.role != manager"
+    environment:
+      SERVICE_PORTS: 80
+    networks:
+      - "monitoring"
+
+  proxy: 
+    image: dockercloud/haproxy
+    deploy:
+      mode: global
+      placement:
+        constraints: 
+          - "node.role == manager"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    ports:
+      - "80:80"
+    networks:
+      - "monitoring"
+    depends_on:
+      - "nginx"  
+
+  visual:
+    image: dockersamples/visualizer
+    deploy:
+      mode: global
+      placement:
+        constraints: 
+          - "node.role == manager"
+    ports:
+      - "8100:8080"
+    networks:
+      - "monitoring"  
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      
+  mariadb:
+    image: mariadb:latest
+    deploy:
+      mode: global
+      placement: 
+        constraints: 
+          - "node.role == worker"
+    ports:
+      - "3306:3306"      
+    environment:
+      MYSQL_ROOT_PASSWORD: test123
+      MYSQL_DATABASE: docker
+      MYSQL_USER: docker
+      MYSQL_PASSWORD: docker   
+    volumes:
+      - "mariadb_data:/var/lib/mysql"
+    networks:
+      - "monitoring"
+
+volumes:
+  mariadb_data: {}
+
+networks:
+  monitoring:
+    external: true
